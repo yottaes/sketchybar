@@ -1,25 +1,32 @@
-local icons = require("icons")
 local colors = require("colors")
 local settings = require("settings")
 local center_popup = require("center_popup")
 
 -- Native event provider for network throughput
--- NOTE: All shell commands below are hardcoded strings with no user input.
--- sbar.exec is the SketchyBar Lua API, not Node.js child_process.
+-- NOTE: sbar.exec is the SketchyBar Lua API, not Node.js.
+-- All commands below are hardcoded strings with no user input.
 sbar.exec("killall network_load >/dev/null 2>&1; $CONFIG_DIR/helpers/network_load/bin/network_load auto network_update 2.0")
-
-local last_icon = nil
-local last_icon_color = nil
 
 local wifi_interface = os.getenv("WIFI_INTERFACE") or "en0"
 
-local graph_width = 44
+local graph_width = 100
 local trailing_gap = 16
 
+-- NET widget matching system_stats style: NET label | speeds | graph
 local wifi_net = sbar.add("graph", "widgets.wifi.net", graph_width, {
   position = "right",
-  graph = { color = colors.red },
-  icon = { drawing = false },
+  graph = { color = colors.with_alpha(colors.blue, 0.4) },
+  icon = {
+    string = "NET",
+    color = colors.blue,
+    font = {
+      family = settings.font.text,
+      style = settings.font.style_map["Heavy"],
+      size = 9.0,
+    },
+    padding_left = 4,
+    padding_right = 0,
+  },
   label = {
     string = "--",
     color = colors.text,
@@ -29,7 +36,7 @@ local wifi_net = sbar.add("graph", "widgets.wifi.net", graph_width, {
       size = 9.0,
     },
     align = "right",
-    padding_left = 2,
+    padding_left = 0,
     padding_right = 6,
     width = 0,
     y_offset = 4,
@@ -38,19 +45,27 @@ local wifi_net = sbar.add("graph", "widgets.wifi.net", graph_width, {
   padding_right = trailing_gap,
 })
 
-local wifi = sbar.add("item", "widgets.wifi", {
+-- Overlay for upload speed (bottom line)
+-- width=0 ensures this item takes no layout space (it overlaps the graph)
+local wifi_net_sub = sbar.add("item", "widgets.wifi.net.sub", {
   position = "right",
-  icon = {
-    padding_right = settings.paddings,
+  width = 0,
+  icon = { drawing = false },
+  label = {
+    string = "--",
+    color = colors.subtext0,
     font = {
+      family = settings.font.numbers,
       style = settings.font.style_map["Regular"],
-      size = 15.0,
+      size = 8.0,
     },
+    align = "right",
+    padding_left = 0,
+    padding_right = 6,
+    y_offset = -4,
   },
-  label = { drawing = false },
   padding_left = 0,
   padding_right = 0,
-  update_freq = 600,
   background = { drawing = false },
 })
 
@@ -60,31 +75,25 @@ local function round_int(n)
   return math.floor(n + 0.5)
 end
 
-local function format_widget_rate(mbps)
+local function format_rate(mbps)
   local n = tonumber(mbps) or 0
   if n < 0 then n = 0 end
   if n >= 1000 then
-    return string.format("%.1fGbps", n / 1000)
+    return string.format("%.1fG", n / 1000)
   elseif n >= 1 then
-    return string.format("%dMbps", round_int(n))
+    return string.format("%dM", round_int(n))
   else
-    return string.format("%dKbps", round_int(n * 1000))
+    return string.format("%dK", round_int(n * 1000))
   end
 end
 
 local graph_peak = 10
 
-local function render_widget(connected)
-  local icon = connected and icons.wifi.connected or icons.wifi.disconnected
-  local icon_color = connected and colors.green or colors.red
+local current_connected = false
+local current_down_mbps = 0
+local current_up_mbps = 0
 
-  if last_icon ~= icon or last_icon_color ~= icon_color then
-    last_icon = icon
-    last_icon_color = icon_color
-    wifi:set({ icon = { string = icon, color = icon_color } })
-  end
-end
-
+-- Popup setup
 local popup_width = 420
 local wifi_popup = center_popup.create("wifi.popup", {
   width = popup_width,
@@ -163,22 +172,18 @@ local function format_rate_row(mbps)
   return string.format("%d Mbps", round_int(n))
 end
 
-local current_connected = false
-local current_down_mbps = 0
-local current_up_mbps = 0
-
 local function update_popup_rates(force)
   if not force and not wifi_popup.is_showing() then return end
   row_download:set({ label = { string = format_rate_row(current_down_mbps) } })
   row_upload:set({ label = { string = format_rate_row(current_up_mbps) } })
 end
 
+-- Hardcoded ipconfig command
 local function update_connection_state(force_popup)
   if _G.SKETCHYBAR_SUSPENDED then return end
   sbar.exec("/usr/sbin/ipconfig getifaddr " .. wifi_interface .. " 2>/dev/null", function(ip)
     ip = tostring(ip or ""):gsub("%s+$", "")
     current_connected = (ip ~= "")
-    render_widget(current_connected)
 
     if force_popup or wifi_popup.is_showing() then
       row_status:set({ label = { string = current_connected and "Connected" or "Disconnected" } })
@@ -188,15 +193,14 @@ local function update_connection_state(force_popup)
   end)
 end
 
-wifi:subscribe({ "forced", "routine", "wifi_change", "system_woke" }, function(_)
+wifi_net:subscribe({ "forced", "routine", "wifi_change", "system_woke" }, function(_)
   update_connection_state(false)
 end)
 
-wifi:subscribe("network_update", function(env)
+wifi_net:subscribe("network_update", function(env)
   if _G.SKETCHYBAR_SUSPENDED then return end
   current_down_mbps = tonumber(env.download) or 0
   current_up_mbps = tonumber(env.upload) or 0
-  render_widget(current_connected)
   update_popup_rates(false)
 
   local total_mbps = current_down_mbps + current_up_mbps
@@ -205,7 +209,10 @@ wifi:subscribe("network_update", function(env)
   end
   local normalized = math.min(total_mbps / graph_peak, 1.0)
   wifi_net:push({ normalized })
-  wifi_net:set({ label = format_widget_rate(total_mbps) })
+
+  -- Top line: download speed, bottom line: upload speed
+  wifi_net:set({ label = format_rate(current_down_mbps) .. " ↓" })
+  wifi_net_sub:set({ label = format_rate(current_up_mbps) .. " ↑" })
 end)
 
 local function apply_wifi_info(info)
@@ -223,8 +230,6 @@ local function apply_wifi_info(info)
   elseif info.ip == "" then
     current_connected = false
   end
-
-  render_widget(current_connected)
 
   row_status:set({ label = { string = current_connected and "Connected" or "Disconnected" } })
   row_ssid:set({ label = { string = (info.ssid and info.ssid ~= "") and tostring(info.ssid) or "-" } })
@@ -248,6 +253,7 @@ local function apply_wifi_info(info)
   update_popup_rates(true)
 end
 
+-- Hardcoded helper binary path
 local function fetch_wifi_info(after)
   sbar.exec("$CONFIG_DIR/helpers/network_info/bin/SketchyBarNetworkInfoHelper.app/Contents/MacOS/SketchyBarNetworkInfoHelper auto", function(info)
     apply_wifi_info(info)
@@ -275,8 +281,7 @@ local function wifi_on_click(env)
   end)
 end
 
-wifi:subscribe("mouse.clicked", wifi_on_click)
 wifi_net:subscribe("mouse.clicked", wifi_on_click)
+wifi_net_sub:subscribe("mouse.clicked", wifi_on_click)
 
-render_widget(false)
 update_connection_state(false)

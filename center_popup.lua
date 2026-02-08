@@ -198,9 +198,22 @@ function M.hide(item)
   end
 end
 
+-- Close all open popups except the one named `except_name`
+function M.hide_all(except_name)
+  for reg_name, reg_item in pairs(M._registry) do
+    if reg_item and reg_name ~= except_name and M._open[reg_name] == true then
+      M.hide(reg_item)
+    end
+  end
+end
+
 function M.show(item, on_show)
   if not item then return end
   local name = item.name
+
+  -- Mutual exclusion: close every other popup before opening this one
+  M.hide_all(name)
+
   local token = 0
   if name then
     token = (M._show_token[name] or 0) + 1
@@ -317,9 +330,15 @@ function M.create(name, opts)
   if space_mode ~= "none" then
     ensure_watcher()
   end
-  if auto_hide then
-    M.auto_hide(anchor)
-  end
+
+  -- Always subscribe to mouse.exited.global and front_app_switched for
+  -- click-outside-close and app-switch-close on all popups.
+  anchor:subscribe("mouse.exited.global", function(_)
+    M.hide(anchor)
+  end)
+  anchor:subscribe("front_app_switched", function(_)
+    M.hide(anchor)
+  end)
 
   local position = "popup." .. anchor.name
 
@@ -496,5 +515,21 @@ function M.create(name, opts)
     add_slider = add_slider,
   }
 end
+
+-- Register a custom event so external hotkey daemons can close all popups
+-- via: sketchybar --trigger popup_close
+sbar.add("event", "popup_close")
+
+local close_watcher = sbar.add("item", "center_popup.close_watcher", {
+  drawing = false,
+  updates = true,
+  icon = { drawing = false },
+  label = { drawing = false },
+  background = { drawing = false },
+})
+
+close_watcher:subscribe("popup_close", function(_)
+  M.hide_all(nil)
+end)
 
 return M
