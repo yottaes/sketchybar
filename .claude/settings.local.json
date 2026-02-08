@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:linkarzu.com)",
+      "WebFetch(domain:nikitabobko.github.io)",
+      "Bash(gh api:*)",
+      "Bash(brew list:*)",
+      "Bash(brew install:*)",
+      "Bash(fc-list:*)"
+    ]
+  }
+}
