@@ -297,7 +297,7 @@ int main(int argc, char **argv) {
   snprintf(event_message, sizeof(event_message), "--add event '%s'", argv[1]);
   sketchybar(event_message);
 
-  char trigger_message[4096];
+  char trigger_message[8192];
   char gpu_procs_buffer[2048];
   for (;;) {
     cpu_update(&cpu);
@@ -315,15 +315,31 @@ int main(int argc, char **argv) {
     // Get top GPU processes
     get_top_gpu_processes(gpu_procs_buffer, sizeof(gpu_procs_buffer));
 
+    // Format per-core loads as comma-separated string
+    char core_loads_str[512] = "";
+    size_t off = 0;
+    for (int i = 0; i < (int)cpu.ncores && i < MAX_CORES; i++) {
+      off += snprintf(core_loads_str + off, sizeof(core_loads_str) - off,
+                      "%s%d", i > 0 ? "," : "", cpu.core_loads[i]);
+    }
+
+    // Compute memory in GB
+    double mem_used_gb = mem_ok ? (double)mem_used / (1024.0 * 1024.0 * 1024.0) : 0.0;
+    double mem_total_gb = mem_ok ? (double)mem_total / (1024.0 * 1024.0 * 1024.0) : 0.0;
+
     snprintf(trigger_message,
              sizeof(trigger_message),
              "--trigger '%s' "
              "cpu_user='%d' "
              "cpu_sys='%d' "
              "cpu_total='%d' "
+             "cpu_ncores='%d' "
+             "cpu_core_loads='%s' "
              "mem_used_percent='%d' "
              "mem_used_bytes='%llu' "
              "mem_total_bytes='%llu' "
+             "mem_used_gb='%.1f' "
+             "mem_total_gb='%.0f' "
              "gpu_util='%d' "
              "cpu_temp='%d' "
              "gpu_temp='%d' "
@@ -332,9 +348,13 @@ int main(int argc, char **argv) {
              cpu.user_load,
              cpu.sys_load,
              cpu.total_load,
+             (int)cpu.ncores,
+             core_loads_str,
              mem_ok ? mem_percent : -1,
              (unsigned long long)(mem_ok ? mem_used : 0ULL),
              (unsigned long long)(mem_ok ? mem_total : 0ULL),
+             mem_used_gb,
+             mem_total_gb,
              gpu_util,
              cpu_temp,
              gpu_temp,

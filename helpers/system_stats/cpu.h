@@ -1,7 +1,10 @@
 #include <mach/mach.h>
+#include <mach/processor_info.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include <stdio.h>
+
+#define MAX_CORES 32
 
 struct cpu {
   host_t host;
@@ -13,6 +16,13 @@ struct cpu {
   int user_load;
   int sys_load;
   int total_load;
+
+  // Per-core tracking
+  natural_t ncores;
+  int core_loads[MAX_CORES];
+  processor_cpu_load_info_t prev_core_info;
+  mach_msg_type_number_t prev_core_count;
+  bool has_prev_core_info;
 };
 
 static inline void cpu_init(struct cpu* cpu) {
@@ -22,6 +32,65 @@ static inline void cpu_init(struct cpu* cpu) {
   cpu->user_load = 0;
   cpu->sys_load = 0;
   cpu->total_load = 0;
+
+  cpu->ncores = 0;
+  memset(cpu->core_loads, 0, sizeof(cpu->core_loads));
+  cpu->prev_core_info = NULL;
+  cpu->prev_core_count = 0;
+  cpu->has_prev_core_info = false;
+}
+
+static inline void cpu_update_cores(struct cpu* cpu) {
+  natural_t ncores = 0;
+  processor_cpu_load_info_t info = NULL;
+  mach_msg_type_number_t info_count = 0;
+
+  kern_return_t kr = host_processor_info(cpu->host,
+                                          PROCESSOR_CPU_LOAD_INFO,
+                                          &ncores,
+                                          (processor_info_array_t*)&info,
+                                          &info_count);
+  if (kr != KERN_SUCCESS) {
+    return;
+  }
+
+  if (ncores > MAX_CORES) ncores = MAX_CORES;
+  cpu->ncores = ncores;
+
+  if (cpu->has_prev_core_info && cpu->prev_core_info) {
+    natural_t prev_n = cpu->prev_core_count / PROCESSOR_CPU_LOAD_INFO_COUNT;
+    if (prev_n > ncores) prev_n = ncores;
+
+    for (natural_t i = 0; i < prev_n; i++) {
+      unsigned int delta_user = info[i].cpu_ticks[CPU_STATE_USER]
+                                - cpu->prev_core_info[i].cpu_ticks[CPU_STATE_USER];
+      unsigned int delta_sys  = info[i].cpu_ticks[CPU_STATE_SYSTEM]
+                                - cpu->prev_core_info[i].cpu_ticks[CPU_STATE_SYSTEM];
+      unsigned int delta_idle = info[i].cpu_ticks[CPU_STATE_IDLE]
+                                - cpu->prev_core_info[i].cpu_ticks[CPU_STATE_IDLE];
+      unsigned int delta_nice = info[i].cpu_ticks[CPU_STATE_NICE]
+                                - cpu->prev_core_info[i].cpu_ticks[CPU_STATE_NICE];
+
+      unsigned int total = delta_user + delta_sys + delta_idle + delta_nice;
+      if (total > 0) {
+        cpu->core_loads[i] = (int)((double)(delta_user + delta_sys) / (double)total * 100.0);
+      } else {
+        cpu->core_loads[i] = 0;
+      }
+    }
+  }
+
+  // Deallocate previous snapshot
+  if (cpu->prev_core_info) {
+    vm_deallocate(mach_task_self(),
+                  (vm_address_t)cpu->prev_core_info,
+                  cpu->prev_core_count * sizeof(integer_t));
+  }
+
+  // Store current as previous for next iteration
+  cpu->prev_core_info = info;
+  cpu->prev_core_count = info_count;
+  cpu->has_prev_core_info = true;
 }
 
 static inline void cpu_update(struct cpu* cpu) {
@@ -58,4 +127,6 @@ static inline void cpu_update(struct cpu* cpu) {
 
   cpu->prev_load = cpu->load;
   cpu->has_prev_load = true;
+
+  cpu_update_cores(cpu);
 }
