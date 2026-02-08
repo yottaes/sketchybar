@@ -9,7 +9,7 @@ sbar.exec("killall network_load >/dev/null 2>&1; $CONFIG_DIR/helpers/network_loa
 
 local wifi_interface = os.getenv("WIFI_INTERFACE") or "en0"
 
-local graph_width = 100
+local graph_width = 80
 local trailing_gap = 16
 
 -- NET widget matching system_stats style: NET label | speeds | graph
@@ -22,7 +22,7 @@ local wifi_net = sbar.add("graph", "widgets.wifi.net", graph_width, {
     font = {
       family = settings.font.text,
       style = settings.font.style_map["Heavy"],
-      size = 9.0,
+      size = 12.0,
     },
     padding_left = 4,
     padding_right = 0,
@@ -36,37 +36,13 @@ local wifi_net = sbar.add("graph", "widgets.wifi.net", graph_width, {
       size = 9.0,
     },
     align = "right",
-    padding_left = 0,
+    padding_left = 2,
     padding_right = 6,
     width = 0,
     y_offset = 4,
   },
   padding_left = 0,
   padding_right = trailing_gap,
-})
-
--- Overlay for upload speed (bottom line)
--- width=0 ensures this item takes no layout space (it overlaps the graph)
-local wifi_net_sub = sbar.add("item", "widgets.wifi.net.sub", {
-  position = "right",
-  width = 0,
-  icon = { drawing = false },
-  label = {
-    string = "--",
-    color = colors.subtext0,
-    font = {
-      family = settings.font.numbers,
-      style = settings.font.style_map["Regular"],
-      size = 8.0,
-    },
-    align = "right",
-    padding_left = 0,
-    padding_right = 6,
-    y_offset = -4,
-  },
-  padding_left = 0,
-  padding_right = 0,
-  background = { drawing = false },
 })
 
 local function round_int(n)
@@ -210,9 +186,8 @@ wifi_net:subscribe("network_update", function(env)
   local normalized = math.min(total_mbps / graph_peak, 1.0)
   wifi_net:push({ normalized })
 
-  -- Top line: download speed, bottom line: upload speed
-  wifi_net:set({ label = format_rate(current_down_mbps) .. " ↓" })
-  wifi_net_sub:set({ label = format_rate(current_up_mbps) .. " ↑" })
+  -- Combined: "12M↓ 0K↑"
+  wifi_net:set({ label = format_rate(current_down_mbps) .. "↓ " .. format_rate(current_up_mbps) .. "↑" })
 end)
 
 local function apply_wifi_info(info)
@@ -282,6 +257,5 @@ local function wifi_on_click(env)
 end
 
 wifi_net:subscribe("mouse.clicked", wifi_on_click)
-wifi_net_sub:subscribe("mouse.clicked", wifi_on_click)
 
 update_connection_state(false)

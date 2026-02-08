@@ -307,6 +307,7 @@ function M.create(name, opts)
   local anchor = sbar.add("item", name, {
     position = "center",
     width = 1,
+    updates = true,
     icon = { drawing = false },
     label = { drawing = false },
     background = { drawing = false },
@@ -331,11 +332,7 @@ function M.create(name, opts)
     ensure_watcher()
   end
 
-  -- Always subscribe to mouse.exited.global and front_app_switched for
-  -- click-outside-close and app-switch-close on all popups.
-  anchor:subscribe("mouse.exited.global", function(_)
-    M.hide(anchor)
-  end)
+  -- Close popup when user switches to another app
   anchor:subscribe("front_app_switched", function(_)
     M.hide(anchor)
   end)

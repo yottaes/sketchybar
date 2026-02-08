@@ -9,7 +9,10 @@
       "Bash(brew list:*)",
       "Bash(brew install:*)",
       "Bash(fc-list:*)",
-      "Bash(luac:*)"
+      "Bash(luac:*)",
+      "Bash(sysctl:*)",
+      "Bash(powermetrics:*)",
+      "Bash(ioreg:*)"
     ]
   }
 }
