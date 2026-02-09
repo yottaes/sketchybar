@@ -12,7 +12,12 @@
       "Bash(luac:*)",
       "Bash(sysctl:*)",
       "Bash(powermetrics:*)",
-      "Bash(ioreg:*)"
+      "Bash(ioreg:*)",
+      "Bash(gh search issues:*)",
+      "Bash(gh issue view:*)",
+      "WebFetch(domain:felixkratz.github.io)",
+      "Bash(gh search code:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

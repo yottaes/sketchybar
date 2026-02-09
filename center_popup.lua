@@ -332,7 +332,11 @@ function M.create(name, opts)
     ensure_watcher()
   end
 
-  -- Close popup when user switches to another app
+  -- Close popup when mouse leaves the popup area or user switches app
+  anchor:subscribe("mouse.exited.global", function(_)
+    M.hide(anchor)
+  end)
+
   anchor:subscribe("front_app_switched", function(_)
     M.hide(anchor)
   end)

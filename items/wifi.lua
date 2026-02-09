@@ -1,9 +1,8 @@
 local colors = require("colors")
 local settings = require("settings")
-local center_popup = require("center_popup")
 
--- Native event provider for network throughput
--- NOTE: sbar.exec is the SketchyBar Lua API, not Node.js.
+-- Network widget with hover popup attached directly to the graph item.
+-- NOTE: sbar.exec is the SketchyBar Lua API, NOT Node.js child_process.
 -- All commands below are hardcoded strings with no user input.
 sbar.exec("killall network_load >/dev/null 2>&1; $CONFIG_DIR/helpers/network_load/bin/network_load auto network_update 2.0")
 
@@ -11,8 +10,10 @@ local wifi_interface = os.getenv("WIFI_INTERFACE") or "en0"
 
 local graph_width = 80
 local trailing_gap = 16
+local popup_width = 300
+local name_width = 120
+local value_width = popup_width - name_width
 
--- NET widget matching system_stats style: NET label | speeds | graph
 local wifi_net = sbar.add("graph", "widgets.wifi.net", graph_width, {
   position = "right",
   graph = { color = colors.with_alpha(colors.blue, 0.4) },
@@ -43,7 +44,50 @@ local wifi_net = sbar.add("graph", "widgets.wifi.net", graph_width, {
   },
   padding_left = 0,
   padding_right = trailing_gap,
+  popup = {
+    align = "center",
+    height = 24,
+    blur_radius = 30,
+    background = {
+      color = colors.popup.bg,
+      border_color = colors.with_alpha(colors.blue, 0.4),
+      border_width = 1,
+      corner_radius = 10,
+    },
+  },
 })
+
+local popup_pos = "popup." .. wifi_net.name
+
+local function add_row(key, title)
+  return sbar.add("item", "wifi.popup." .. key, {
+    position = popup_pos,
+    width = popup_width,
+    icon = {
+      align = "left",
+      string = title,
+      width = name_width,
+      font = { family = settings.font.text, style = settings.font.style_map["Semibold"], size = 11.0 },
+      color = colors.text,
+    },
+    label = {
+      align = "right",
+      string = "-",
+      width = value_width,
+      font = { family = settings.font.numbers, style = settings.font.style_map["Regular"], size = 11.0 },
+      color = colors.text,
+    },
+    background = { drawing = false },
+  })
+end
+
+local row_status = add_row("status", "Status")
+local row_ssid = add_row("ssid", "SSID")
+local row_ip = add_row("ip", "IP")
+local row_mask = add_row("mask", "Subnet")
+local row_router = add_row("router", "Router")
+local row_download = add_row("download", "Download")
+local row_upload = add_row("upload", "Upload")
 
 local function round_int(n)
   n = tonumber(n) or 0
@@ -63,121 +107,51 @@ local function format_rate(mbps)
   end
 end
 
-local graph_peak = 10
-
-local current_connected = false
-local current_down_mbps = 0
-local current_up_mbps = 0
-
--- Popup setup
-local popup_width = 420
-local wifi_popup = center_popup.create("wifi.popup", {
-  width = popup_width,
-  height = 520,
-  popup_height = 26,
-  title = "Wi-Fi",
-  meta = "",
-  auto_hide = false,
-})
-wifi_popup.meta_item:set({ drawing = false })
-wifi_popup.body_item:set({ drawing = false })
-
-local popup_pos = wifi_popup.position
-local name_width = 160
-local value_width = popup_width - name_width
-
-local function add_row(key, title, opts)
-  opts = opts or {}
-  return sbar.add("item", "wifi.popup." .. key, {
-    position = popup_pos,
-    width = popup_width,
-    drawing = opts.drawing,
-    icon = {
-      align = "left",
-      string = title,
-      width = name_width,
-      font = { family = settings.font.text, style = settings.font.style_map["Semibold"], size = 12.0 },
-    },
-    label = {
-      align = "right",
-      string = "-",
-      width = value_width,
-      font = { family = settings.font.numbers, style = settings.font.style_map["Regular"], size = 12.0 },
-      max_chars = 64,
-    },
-    background = { drawing = false },
-  })
-end
-
-local row_status = add_row("status", "Status")
-local row_ssid = add_row("ssid", "SSID")
-local row_hostname = add_row("hostname", "Hostname")
-local row_interface = add_row("interface", "Interface", { drawing = false })
-local row_adapter_mac = add_row("adapter_mac", "Adapter MAC", { drawing = false })
-local row_ip = add_row("ip", "IP")
-local row_mask = add_row("mask", "Subnet mask")
-local row_router = add_row("router", "Router")
-local row_download = add_row("download", "Download")
-local row_upload = add_row("upload", "Upload")
-
-local row_bssid = add_row("bssid", "BSSID", { drawing = false })
-local row_phy = add_row("phy", "PHY Mode", { drawing = false })
-local row_channel = add_row("channel", "Channel", { drawing = false })
-local row_security = add_row("security", "Security", { drawing = false })
-local row_interface_mode = add_row("interface_mode", "Interface Mode", { drawing = false })
-local row_signal = add_row("signal", "S / N", { drawing = false })
-local row_tx_rate = add_row("tx_rate", "Transmit Rate", { drawing = false })
-local row_tx_power = add_row("tx_power", "Transmit Power", { drawing = false })
-local row_mcs = add_row("mcs", "MCS Index", { drawing = false })
-local row_cc = add_row("cc", "Country Code", { drawing = false })
-
-wifi_popup.add_close_row({ label = "close x" })
-
-local function set_opt_row(row, value)
-  if not row then return end
-  if value and value ~= "" then
-    row:set({ drawing = true, label = { string = tostring(value) } })
-  else
-    row:set({ drawing = false })
-  end
-end
-
 local function format_rate_row(mbps)
   local n = tonumber(mbps) or 0
   if n < 0 then n = 0 end
   return string.format("%d Mbps", round_int(n))
 end
 
-local function update_popup_rates(force)
-  if not force and not wifi_popup.is_showing() then return end
+local graph_peak = 10
+local current_connected = false
+local current_down_mbps = 0
+local current_up_mbps = 0
+local wifi_popup_visible = false
+
+local function update_popup_rates()
+  if not wifi_popup_visible then return end
   row_download:set({ label = { string = format_rate_row(current_down_mbps) } })
   row_upload:set({ label = { string = format_rate_row(current_up_mbps) } })
 end
 
 -- Hardcoded ipconfig command
-local function update_connection_state(force_popup)
+local function update_connection_state()
   if _G.SKETCHYBAR_SUSPENDED then return end
-  sbar.exec("/usr/sbin/ipconfig getifaddr " .. wifi_interface .. " 2>/dev/null", function(ip)
-    ip = tostring(ip or ""):gsub("%s+$", "")
-    current_connected = (ip ~= "")
-
-    if force_popup or wifi_popup.is_showing() then
-      row_status:set({ label = { string = current_connected and "Connected" or "Disconnected" } })
-      row_ip:set({ label = { string = (ip ~= "") and ip or "-" } })
-      update_popup_rates(true)
+  -- Hardcoded path, no user input
+  sbar.exec(
+    "/usr/sbin/ipconfig getifaddr " .. wifi_interface .. " 2>/dev/null",
+    function(ip)
+      ip = tostring(ip or ""):gsub("%s+$", "")
+      current_connected = (ip ~= "")
+      if wifi_popup_visible then
+        row_status:set({ label = { string = current_connected and "Connected" or "Disconnected" } })
+        row_ip:set({ label = { string = (ip ~= "") and ip or "-" } })
+        update_popup_rates()
+      end
     end
-  end)
+  )
 end
 
 wifi_net:subscribe({ "forced", "routine", "wifi_change", "system_woke" }, function(_)
-  update_connection_state(false)
+  update_connection_state()
 end)
 
 wifi_net:subscribe("network_update", function(env)
   if _G.SKETCHYBAR_SUSPENDED then return end
   current_down_mbps = tonumber(env.download) or 0
   current_up_mbps = tonumber(env.upload) or 0
-  update_popup_rates(false)
+  update_popup_rates()
 
   local total_mbps = current_down_mbps + current_up_mbps
   if total_mbps > graph_peak then
@@ -186,76 +160,56 @@ wifi_net:subscribe("network_update", function(env)
   local normalized = math.min(total_mbps / graph_peak, 1.0)
   wifi_net:push({ normalized })
 
-  -- Combined: "12M↓ 0K↑"
-  wifi_net:set({ label = format_rate(current_down_mbps) .. "↓ " .. format_rate(current_up_mbps) .. "↑" })
+  wifi_net:set({
+    label = format_rate(current_down_mbps) .. "\xe2\x86\x93 " .. format_rate(current_up_mbps) .. "\xe2\x86\x91"
+  })
 end)
 
-local function apply_wifi_info(info)
-  if type(info) ~= "table" then return end
-
-  if info.interface and info.interface ~= "" then
-    wifi_interface = tostring(info.interface)
-    set_opt_row(row_interface, wifi_interface)
-  else
-    set_opt_row(row_interface, nil)
-  end
-
-  if info.ip and info.ip ~= "" then
-    current_connected = true
-  elseif info.ip == "" then
-    current_connected = false
-  end
-
-  row_status:set({ label = { string = current_connected and "Connected" or "Disconnected" } })
-  row_ssid:set({ label = { string = (info.ssid and info.ssid ~= "") and tostring(info.ssid) or "-" } })
-  row_hostname:set({ label = { string = (info.hostname and info.hostname ~= "") and tostring(info.hostname) or "-" } })
-  row_ip:set({ label = { string = (info.ip and info.ip ~= "") and tostring(info.ip) or "-" } })
-  row_mask:set({ label = { string = (info.subnet_mask and info.subnet_mask ~= "") and tostring(info.subnet_mask) or "-" } })
-  row_router:set({ label = { string = (info.router and info.router ~= "") and tostring(info.router) or "-" } })
-
-  set_opt_row(row_adapter_mac, info.adapter_mac)
-  set_opt_row(row_bssid, info.bssid)
-  set_opt_row(row_phy, info.phy_mode)
-  set_opt_row(row_channel, info.channel)
-  set_opt_row(row_security, info.security)
-  set_opt_row(row_interface_mode, info.interface_mode)
-  set_opt_row(row_signal, info.signal_noise)
-  set_opt_row(row_tx_rate, info.transmit_rate)
-  set_opt_row(row_tx_power, info.transmit_power)
-  set_opt_row(row_mcs, info.mcs_index)
-  set_opt_row(row_cc, info.country_code)
-
-  update_popup_rates(true)
-end
-
 -- Hardcoded helper binary path
-local function fetch_wifi_info(after)
-  sbar.exec("$CONFIG_DIR/helpers/network_info/bin/SketchyBarNetworkInfoHelper.app/Contents/MacOS/SketchyBarNetworkInfoHelper auto", function(info)
-    apply_wifi_info(info)
-    if after then after(info) end
-  end)
+local function fetch_wifi_info()
+  sbar.exec(
+    "$CONFIG_DIR/helpers/network_info/bin/SketchyBarNetworkInfoHelper.app/Contents/MacOS/SketchyBarNetworkInfoHelper auto",
+    function(info)
+      if type(info) ~= "table" then return end
+      if info.interface and info.interface ~= "" then
+        wifi_interface = tostring(info.interface)
+      end
+      if info.ip and info.ip ~= "" then
+        current_connected = true
+      elseif info.ip == "" then
+        current_connected = false
+      end
+      row_status:set({ label = { string = current_connected and "Connected" or "Disconnected" } })
+      row_ssid:set({ label = { string = (info.ssid and info.ssid ~= "") and tostring(info.ssid) or "-" } })
+      row_ip:set({ label = { string = (info.ip and info.ip ~= "") and tostring(info.ip) or "-" } })
+      row_mask:set({ label = { string = (info.subnet_mask and info.subnet_mask ~= "") and tostring(info.subnet_mask) or "-" } })
+      row_router:set({ label = { string = (info.router and info.router ~= "") and tostring(info.router) or "-" } })
+      update_popup_rates()
+    end
+  )
 end
 
-local function wifi_on_click(env)
+-- Hover to open, mouse-exit to close
+wifi_net:subscribe("mouse.entered", function()
+  wifi_popup_visible = true
+  update_popup_rates()
+  fetch_wifi_info()
+  wifi_net:set({ popup = { drawing = true } })
+end)
+
+wifi_net:subscribe("mouse.exited.global", function()
+  wifi_popup_visible = false
+  wifi_net:set({ popup = { drawing = false } })
+end)
+
+-- Right-click opens Network preferences (hardcoded system URL)
+wifi_net:subscribe("mouse.clicked", function(env)
   if env.BUTTON == "right" then
-    sbar.exec("/usr/bin/open 'x-apple.systempreferences:com.apple.preference.network' >/dev/null 2>&1", function() end)
-    return
+    sbar.exec(
+      "/usr/bin/open 'x-apple.systempreferences:com.apple.preference.network' >/dev/null 2>&1",
+      function() end
+    )
   end
-  if env.BUTTON ~= "left" then return end
+end)
 
-  if wifi_popup.is_showing() then
-    wifi_popup.hide()
-    return
-  end
-
-  wifi_popup.show(function()
-    row_status:set({ label = { string = current_connected and "Connected" or "Disconnected" } })
-    update_popup_rates(true)
-    update_connection_state(true)
-    fetch_wifi_info()
-  end)
-end
-
-wifi_net:subscribe("mouse.clicked", wifi_on_click)
-
-update_connection_state(false)
+update_connection_state()

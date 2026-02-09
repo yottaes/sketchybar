@@ -3,7 +3,7 @@ local colors = require("colors")
 -- Equivalent to the --bar domain
 sbar.bar({
   height = 32,
-  topmost = true,
+  topmost = "window",
   -- Visual effects (blur + translucency)
   color = colors.bar.bg,
   blur_radius = 20,
