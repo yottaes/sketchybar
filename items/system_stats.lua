@@ -211,20 +211,21 @@ cpu_info:subscribe("system_stats_update", function(env)
 		return
 	end
 
-	-- CPU: temp + load
-	local cpu_total = tonumber(env.cpu_total)
-	local cpu_temp_val = tonumber(env.cpu_temp)
+	-- CPU: avg temp + avg load (1s averages)
+	local cpu_avg = tonumber(env.cpu_avg)
+	local cpu_temp_avg = tonumber(env.cpu_temp_avg)
 	cpu_info:set({
-		icon = { string = (cpu_temp_val and cpu_temp_val >= 0) and string.format("%d\xc2\xb0", cpu_temp_val) or "" },
-		label = { string = cpu_total and string.format("%d%%", cpu_total) or "--" },
+		icon = { string = (cpu_temp_avg and cpu_temp_avg >= 0) and string.format("%d\xc2\xb0", cpu_temp_avg) or "" },
+		label = { string = cpu_avg and cpu_avg >= 0 and string.format("%d%%", cpu_avg) or "--" },
 	})
 
-	-- GPU label
-	if gpu_util and gpu_util >= 0 then
-		local lbl = string.format("%d%%", gpu_util)
-		local gpu_temp_val = tonumber(env.gpu_temp)
-		if gpu_temp_val and gpu_temp_val >= 0 then
-			lbl = lbl .. string.format(" %d\xc2\xb0", gpu_temp_val)
+	-- GPU label (1s averages)
+	local gpu_avg = tonumber(env.gpu_avg)
+	local gpu_temp_avg = tonumber(env.gpu_temp_avg)
+	if gpu_avg and gpu_avg >= 0 then
+		local lbl = string.format("%d%%", gpu_avg)
+		if gpu_temp_avg and gpu_temp_avg >= 0 then
+			lbl = lbl .. string.format(" %d\xc2\xb0", gpu_temp_avg)
 		end
 		gpu:set({ label = lbl })
 	else

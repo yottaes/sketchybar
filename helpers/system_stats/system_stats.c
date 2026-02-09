@@ -305,6 +305,17 @@ int main(int argc, char **argv) {
   char trigger_message[8192];
   char gpu_procs_buffer[2048];
   gpu_procs_buffer[0] = '\0';
+
+  // 1-second averaging state
+  host_cpu_load_info_data_t slow_cpu_prev;
+  bool has_slow_cpu_prev = false;
+  int gpu_util_sum = 0;
+  int gpu_util_count = 0;
+  int cpu_temp_sum = 0;
+  int cpu_temp_count = 0;
+  int gpu_temp_sum = 0;
+  int gpu_temp_count = 0;
+
   int tick = 0;
   for (;;) {
     cpu_update(&cpu);
@@ -315,11 +326,49 @@ int main(int argc, char **argv) {
     bool mem_ok = read_memory_stats(&mem_used, &mem_total, &mem_percent);
 
     int gpu_util = read_gpu_utilization();
+    if (gpu_util >= 0) {
+      gpu_util_sum += gpu_util;
+      gpu_util_count++;
+    }
+
     int cpu_temp = -1;
     int gpu_temp = -1;
     bool is_full = (tick % slow_every == 0);
+
+    // Averages computed on full tick
+    int cpu_avg = -1;
+    int gpu_avg = -1;
+    int cpu_temp_avg = -1;
+    int gpu_temp_avg = -1;
     if (is_full) {
+      // CPU load: 1s delta average
+      if (has_slow_cpu_prev) {
+        uint32_t du = cpu.load.cpu_ticks[CPU_STATE_USER]
+                      - slow_cpu_prev.cpu_ticks[CPU_STATE_USER];
+        uint32_t ds = cpu.load.cpu_ticks[CPU_STATE_SYSTEM]
+                      - slow_cpu_prev.cpu_ticks[CPU_STATE_SYSTEM];
+        uint32_t di = cpu.load.cpu_ticks[CPU_STATE_IDLE]
+                      - slow_cpu_prev.cpu_ticks[CPU_STATE_IDLE];
+        uint32_t dt = du + ds + di;
+        if (dt > 0) cpu_avg = (int)((double)(du + ds) / (double)dt * 100.0);
+      }
+      slow_cpu_prev = cpu.load;
+      has_slow_cpu_prev = true;
+
+      // GPU utilization: average over fast ticks
+      gpu_avg = (gpu_util_count > 0) ? gpu_util_sum / gpu_util_count : -1;
+      gpu_util_sum = 0;
+      gpu_util_count = 0;
+
+      // Temperatures: read and average
       read_temperatures(&cpu_temp, &gpu_temp);
+      if (cpu_temp >= 0) { cpu_temp_sum += cpu_temp; cpu_temp_count++; }
+      if (gpu_temp >= 0) { gpu_temp_sum += gpu_temp; gpu_temp_count++; }
+      cpu_temp_avg = (cpu_temp_count > 0) ? cpu_temp_sum / cpu_temp_count : -1;
+      gpu_temp_avg = (gpu_temp_count > 0) ? gpu_temp_sum / gpu_temp_count : -1;
+      cpu_temp_sum = 0; cpu_temp_count = 0;
+      gpu_temp_sum = 0; gpu_temp_count = 0;
+
       get_top_gpu_processes(gpu_procs_buffer, sizeof(gpu_procs_buffer));
     }
 
@@ -352,7 +401,11 @@ int main(int argc, char **argv) {
              "cpu_temp='%d' "
              "gpu_temp='%d' "
              "gpu_procs='%s' "
-             "full_update='%d'",
+             "full_update='%d' "
+             "cpu_avg='%d' "
+             "gpu_avg='%d' "
+             "cpu_temp_avg='%d' "
+             "gpu_temp_avg='%d'",
              argv[1],
              cpu.user_load,
              cpu.sys_load,
@@ -368,7 +421,11 @@ int main(int argc, char **argv) {
              cpu_temp,
              gpu_temp,
              gpu_procs_buffer,
-             is_full ? 1 : 0);
+             is_full ? 1 : 0,
+             cpu_avg,
+             gpu_avg,
+             cpu_temp_avg,
+             gpu_temp_avg);
 
     sketchybar(trigger_message);
     tick++;
