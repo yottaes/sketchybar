@@ -329,4 +329,6 @@ return {
 	-- Fallback utility icons (no dedicated ligatures in the font).
 	["Synergy"] = ":terminal:",
 	["Lock"] = ":gear:",
+	-- Custom Nerd Font icons (raw glyphs, not :ligature: format — rendered with Nerd Font).
+	["Ghostty"] = "󰊠",
 }
