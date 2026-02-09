@@ -285,9 +285,14 @@ static int read_gpu_utilization(void) {
 int main(int argc, char **argv) {
   float update_freq;
   if (argc < 3 || (sscanf(argv[2], "%f", &update_freq) != 1)) {
-    printf("Usage: %s \"<event-name>\" \"<event_freq>\"\n", argv[0]);
+    printf("Usage: %s \"<event-name>\" \"<event_freq>\" [\"<slow_freq>\"]\n", argv[0]);
     return 1;
   }
+
+  float slow_freq = 1.0f;
+  if (argc >= 4) sscanf(argv[3], "%f", &slow_freq);
+  int slow_every = (int)(slow_freq / update_freq);
+  if (slow_every < 1) slow_every = 1;
 
   alarm(0);
   struct cpu cpu;
@@ -299,6 +304,8 @@ int main(int argc, char **argv) {
 
   char trigger_message[8192];
   char gpu_procs_buffer[2048];
+  gpu_procs_buffer[0] = '\0';
+  int tick = 0;
   for (;;) {
     cpu_update(&cpu);
 
@@ -310,10 +317,11 @@ int main(int argc, char **argv) {
     int gpu_util = read_gpu_utilization();
     int cpu_temp = -1;
     int gpu_temp = -1;
-    read_temperatures(&cpu_temp, &gpu_temp);
-
-    // Get top GPU processes
-    get_top_gpu_processes(gpu_procs_buffer, sizeof(gpu_procs_buffer));
+    bool is_full = (tick % slow_every == 0);
+    if (is_full) {
+      read_temperatures(&cpu_temp, &gpu_temp);
+      get_top_gpu_processes(gpu_procs_buffer, sizeof(gpu_procs_buffer));
+    }
 
     // Format per-core loads as comma-separated string
     char core_loads_str[512] = "";
@@ -343,7 +351,8 @@ int main(int argc, char **argv) {
              "gpu_util='%d' "
              "cpu_temp='%d' "
              "gpu_temp='%d' "
-             "gpu_procs='%s'",
+             "gpu_procs='%s' "
+             "full_update='%d'",
              argv[1],
              cpu.user_load,
              cpu.sys_load,
@@ -358,10 +367,11 @@ int main(int argc, char **argv) {
              gpu_util,
              cpu_temp,
              gpu_temp,
-             gpu_procs_buffer);
+             gpu_procs_buffer,
+             is_full ? 1 : 0);
 
     sketchybar(trigger_message);
-
+    tick++;
     usleep((useconds_t)(update_freq * 1000000.0f));
   }
   return 0;

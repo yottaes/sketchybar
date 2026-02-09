@@ -32,9 +32,14 @@ static bool resolve_primary_interface(SCDynamicStoreRef store,
 int main (int argc, char** argv) {
   float update_freq;
   if (argc < 4 || (sscanf(argv[3], "%f", &update_freq) != 1)) {
-    printf("Usage: %s \"<interface|auto>\" \"<event-name>\" \"<event_freq>\"\n", argv[0]);
+    printf("Usage: %s \"<interface|auto>\" \"<event-name>\" \"<event_freq>\" [\"<slow_freq>\"]\n", argv[0]);
     exit(1);
   }
+
+  float slow_freq = 1.0f;
+  if (argc >= 5) sscanf(argv[4], "%f", &slow_freq);
+  int slow_every = (int)(slow_freq / update_freq);
+  if (slow_every < 1) slow_every = 1;
 
   bool auto_mode = (strcmp(argv[1], "auto") == 0) || (strcmp(argv[1], "default") == 0);
   SCDynamicStoreRef store = NULL;
@@ -63,6 +68,7 @@ int main (int argc, char** argv) {
     return 1;
   }
   char trigger_message[512];
+  int tick = 0;
   for (;;) {
     if (auto_mode) {
       char current[IF_NAMESIZE] = { 0 };
@@ -80,15 +86,18 @@ int main (int argc, char** argv) {
     network_update(&network);
 
     // Prepare the event message
+    bool is_full = (tick % slow_every == 0);
     snprintf(trigger_message,
              512,
-             "--trigger '%s' upload='%.2f' download='%.2f'",
+             "--trigger '%s' upload='%.2f' download='%.2f' full_update='%d'",
              argv[2],
              network.up_mbps,
-             network.down_mbps);
+             network.down_mbps,
+             is_full ? 1 : 0);
 
     // Trigger the event
     sketchybar(trigger_message);
+    tick++;
 
     // Wait
     usleep(update_freq * 1000000);

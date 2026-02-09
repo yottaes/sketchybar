@@ -7,7 +7,7 @@ local settings = require("settings")
 sbar.exec(
 	"killall system_stats >/dev/null 2>&1; "
 		.. os.getenv("CONFIG_DIR")
-		.. "/helpers/system_stats/bin/system_stats system_stats_update 0.5"
+		.. "/helpers/system_stats/bin/system_stats system_stats_update 0.08"
 )
 
 local graph_width = 80
@@ -15,7 +15,7 @@ local graph_width = 80
 local function make_graph(name, icon_text, graph_color, padding_right)
 	return sbar.add("graph", name, graph_width, {
 		position = "right",
-		graph = { color = colors.with_alpha(graph_color, 0.4) },
+		graph = { color = colors.with_alpha(graph_color, 1) },
 		icon = {
 			string = icon_text,
 			color = graph_color,
@@ -183,14 +183,9 @@ cpu_info:subscribe("system_stats_update", function(env)
 		return
 	end
 
-	-- CPU stacked: temp on top, load on bottom
-	local cpu_total = tonumber(env.cpu_total)
-	local cpu_temp_val = tonumber(env.cpu_temp)
-	cpu_info:set({
-		icon = { string = (cpu_temp_val and cpu_temp_val >= 0) and string.format("%d\xc2\xb0", cpu_temp_val) or "" },
-		label = { string = cpu_total and string.format("%d%%", cpu_total) or "--" },
-	})
+	local is_full = env.full_update == "1"
 
+	-- Graphics: always update (unlimited refresh)
 	-- Per-core bars
 	local core_loads_str = env.cpu_core_loads or ""
 	local core_idx = 0
@@ -199,12 +194,35 @@ cpu_info:subscribe("system_stats_update", function(env)
 		core_idx = core_idx + 1
 	end
 
-	-- GPU graph
+	-- GPU graph push
 	local gpu_util = tonumber(env.gpu_util)
-	local gpu_temp_val = tonumber(env.gpu_temp)
 	if gpu_util and gpu_util >= 0 then
 		gpu:push({ gpu_util / 100.0 })
+	end
+
+	-- MEM graph push
+	local mem_percent = tonumber(env.mem_used_percent)
+	if mem_percent and mem_percent >= 0 then
+		mem:push({ mem_percent / 100.0 })
+	end
+
+	-- Text labels: only on full update (~1s)
+	if not is_full then
+		return
+	end
+
+	-- CPU: temp + load
+	local cpu_total = tonumber(env.cpu_total)
+	local cpu_temp_val = tonumber(env.cpu_temp)
+	cpu_info:set({
+		icon = { string = (cpu_temp_val and cpu_temp_val >= 0) and string.format("%d\xc2\xb0", cpu_temp_val) or "" },
+		label = { string = cpu_total and string.format("%d%%", cpu_total) or "--" },
+	})
+
+	-- GPU label
+	if gpu_util and gpu_util >= 0 then
 		local lbl = string.format("%d%%", gpu_util)
+		local gpu_temp_val = tonumber(env.gpu_temp)
 		if gpu_temp_val and gpu_temp_val >= 0 then
 			lbl = lbl .. string.format(" %d\xc2\xb0", gpu_temp_val)
 		end
@@ -213,12 +231,10 @@ cpu_info:subscribe("system_stats_update", function(env)
 		gpu:set({ label = "--" })
 	end
 
-	-- MEM graph
-	local mem_percent = tonumber(env.mem_used_percent)
+	-- MEM label
 	local mem_used_gb = tonumber(env.mem_used_gb)
 	local mem_total_gb = tonumber(env.mem_total_gb)
 	if mem_percent and mem_percent >= 0 then
-		mem:push({ mem_percent / 100.0 })
 		local lbl = string.format("%d%%", mem_percent)
 		if mem_used_gb and mem_total_gb then
 			lbl = lbl .. string.format(" %.0f/%.0fG", mem_used_gb, mem_total_gb)
