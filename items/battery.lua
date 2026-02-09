@@ -171,7 +171,7 @@ local function update_battery()
     last_charging = charging
     last_icon = icon
     last_color = color
-    battery:set({ icon = { string = icon, color = color }, label = { string = tostring(charge_i) } })
+    battery:set({ icon = { string = icon, color = color }, label = { string = tostring(charge_i) .. "%" } })
   end)
 end
 
