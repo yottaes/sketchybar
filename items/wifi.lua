@@ -91,6 +91,24 @@ local row_router = add_row("router", "Router")
 local row_download = add_row("download", "Download")
 local row_upload = add_row("upload", "Upload")
 
+local close_btn = sbar.add("item", "wifi.popup.close", {
+	position = popup_pos,
+	width = popup_width,
+	icon = {
+		string = "✕  Close",
+		align = "center",
+		width = popup_width,
+		font = {
+			family = settings.font.text,
+			style = settings.font.style_map["Bold"],
+			size = 11.0,
+		},
+		color = colors.with_alpha(colors.blue, 0.8),
+	},
+	label = { drawing = false },
+	background = { drawing = false },
+})
+
 local function round_int(n)
 	n = tonumber(n) or 0
 	if n < 0 then
@@ -210,27 +228,36 @@ local function fetch_wifi_info()
 	)
 end
 
--- Hover to open, mouse-exit to close
-wifi_net:subscribe("mouse.entered", function()
+local function show_popup()
 	wifi_popup_visible = true
 	update_popup_rates()
 	fetch_wifi_info()
 	wifi_net:set({ popup = { drawing = true } })
-end)
+end
 
-wifi_net:subscribe("mouse.exited.global", function()
+local function hide_popup()
 	wifi_popup_visible = false
 	wifi_net:set({ popup = { drawing = false } })
-end)
+end
 
--- Right-click opens Network preferences (hardcoded system URL)
+-- Click to toggle popup; right-click opens Network preferences
 wifi_net:subscribe("mouse.clicked", function(env)
 	if env.BUTTON == "right" then
 		sbar.exec(
 			"/usr/bin/open 'x-apple.systempreferences:com.apple.preference.network' >/dev/null 2>&1",
 			function() end
 		)
+		return
 	end
+	if wifi_popup_visible then
+		hide_popup()
+	else
+		show_popup()
+	end
+end)
+
+close_btn:subscribe("mouse.clicked", function()
+	hide_popup()
 end)
 
 update_connection_state()
