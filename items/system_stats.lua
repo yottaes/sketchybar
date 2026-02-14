@@ -4,11 +4,11 @@ local settings = require("settings")
 -- CPU per-core bars + GPU/MEM graphs. No popups.
 -- NOTE: sbar.exec is the SketchyBar Lua API, NOT Node.js child_process.
 -- All commands below are hardcoded strings with no user input.
-sbar.exec(
-	"killall system_stats >/dev/null 2>&1; "
-		.. os.getenv("CONFIG_DIR")
-		.. "/helpers/system_stats/bin/system_stats system_stats_update 0.08"
-)
+local system_stats_cmd = "killall system_stats >/dev/null 2>&1; "
+	.. os.getenv("CONFIG_DIR")
+	.. "/helpers/system_stats/bin/system_stats system_stats_update 0.08"
+
+sbar.exec(system_stats_cmd)
 
 local graph_width = 80
 
@@ -66,7 +66,12 @@ end)
 --------------------------------------------------------------------------------
 -- CPU PER-CORE VERTICAL BARS
 --------------------------------------------------------------------------------
-local ncores = tonumber(io.popen("sysctl -n hw.ncpu"):read("*a"):match("(%d+)")) or 10
+local ncores
+do
+	local p = io.popen("sysctl -n hw.ncpu")
+	ncores = p and tonumber(p:read("*a"):match("(%d+)")) or 10
+	if p then p:close() end
+end
 
 local max_bar_height = 28
 local bar_width = 6
@@ -244,6 +249,15 @@ cpu_info:subscribe("system_stats_update", function(env)
 	else
 		mem:set({ label = "--" })
 	end
+end)
+
+--------------------------------------------------------------------------------
+-- Restart helper after sleep to avoid stale/zombie process
+--------------------------------------------------------------------------------
+cpu_info:subscribe("system_woke", function(_)
+	sbar.delay(1.5, function()
+		sbar.exec(system_stats_cmd)
+	end)
 end)
 
 --------------------------------------------------------------------------------

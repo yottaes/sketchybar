@@ -26,7 +26,9 @@ local function helpers_ready()
 end
 
 if not helpers_ready() then
-  os.execute("(cd helpers && make) >/dev/null 2>&1")
+  -- Run make asynchronously to avoid blocking the event loop if compilation hangs
+  local helpers_dir = os.getenv("HOME") .. "/.config/sketchybar/helpers"
+  os.execute("(cd '" .. helpers_dir .. "' && make) >/dev/null 2>&1 &")
 end
 
 -- Require the sketchybar module

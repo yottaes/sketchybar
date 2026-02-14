@@ -66,6 +66,10 @@ watcher:subscribe("space_change", function(_)
   suspend_for(0.35)
 end)
 
+watcher:subscribe("system_woke", function(_)
+  suspend_for(2.0)
+end)
+
 local last_app = ""
 watcher:subscribe("front_app_switched", function(env)
   local app = (env and env.INFO) or ""
