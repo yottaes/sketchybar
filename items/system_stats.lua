@@ -6,7 +6,7 @@ local settings = require("settings")
 -- All commands below are hardcoded strings with no user input.
 local system_stats_cmd = "killall system_stats >/dev/null 2>&1; "
 	.. os.getenv("CONFIG_DIR")
-	.. "/helpers/system_stats/bin/system_stats system_stats_update 0.08"
+	.. "/helpers/system_stats/bin/system_stats system_stats_update 0.5"
 
 sbar.exec(system_stats_cmd)
 
@@ -70,7 +70,9 @@ local ncores
 do
 	local p = io.popen("sysctl -n hw.ncpu")
 	ncores = p and tonumber(p:read("*a"):match("(%d+)")) or 10
-	if p then p:close() end
+	if p then
+		p:close()
+	end
 end
 
 local max_bar_height = 28
