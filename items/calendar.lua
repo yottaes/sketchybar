@@ -25,7 +25,6 @@ local cal = sbar.add("item", "widgets.calendar", {
 })
 
 local function update_calendar()
-  if _G.SKETCHYBAR_SUSPENDED then return end
   local label = os.date("%a %b %d  %H:%M")
   if last_label == label then return end
   last_label = label
