@@ -8,6 +8,7 @@ local app_icons = require("app_icons")
 -- All sbar.exec() calls use hardcoded strings with no user input.
 
 sbar.add("event", "aerospace_workspace_change")
+sbar.add("event", "aerospace_focus_change")
 
 local MAX_WORKSPACES = 10
 local MAX_WINDOWS_PER_WS = 5
@@ -75,24 +76,25 @@ for w = 1, MAX_WORKSPACES do
 	ws_groups[w] = { pill = pill, icons = icons }
 end
 
--- Parse `aerospace list-windows --all` output into workspace -> app list map
+-- Parse `aerospace list-windows --all` output into workspace -> window list map
 local function parse_all_windows(output)
-	local workspaces = {} -- ws_name -> { app1, app2, ... }
+	local workspaces = {} -- ws_name -> { {app, win_id}, ... }
 	local ws_seen = {}
 	local ws_order = {}
 
 	for line in output:gmatch("[^\r\n]+") do
-		local ws, app = line:match("^(.-)|||(.-)$")
+		local ws, app, win_id = line:match("^(.-)|||(.-)|||(.-)$")
 		if ws and app then
 			ws = ws:match("^%s*(.-)%s*$")
 			app = app:match("^%s*(.-)%s*$")
+			win_id = win_id and win_id:match("^%s*(.-)%s*$") or ""
 			if ws ~= "" and app ~= "" then
 				if not ws_seen[ws] then
 					ws_seen[ws] = true
 					ws_order[#ws_order + 1] = ws
 					workspaces[ws] = {}
 				end
-				workspaces[ws][#workspaces[ws] + 1] = app
+				workspaces[ws][#workspaces[ws] + 1] = { app = app, win_id = win_id }
 			end
 		end
 	end
@@ -121,7 +123,7 @@ local function ensure_focused(workspaces, ws_order, focused_ws)
 end
 
 -- Apply workspace data to pre-created sketchybar items
-local function render(workspaces, ws_order, focused_ws, focused_app)
+local function render(workspaces, ws_order, focused_ws, focused_win_id)
 	for w = 1, MAX_WORKSPACES do
 		local ws_name = ws_order[w]
 		slot_ws_name[w] = ws_name
@@ -139,13 +141,13 @@ local function render(workspaces, ws_order, focused_ws, focused_app)
 				},
 			})
 
-			local apps = workspaces[ws_name] or {}
+			local wins = workspaces[ws_name] or {}
 			for i = 1, MAX_WINDOWS_PER_WS do
-				local app = apps[i]
-				if app then
-					local icon_str = app_icons[app] or app_icons["Default"] or ":default:"
+				local win = wins[i]
+				if win then
+					local icon_str = app_icons[win.app] or app_icons["Default"] or ":default:"
 					local is_app_font = icon_str:match("^:.*:$")
-					local is_focused = (is_focused_ws and app == focused_app)
+					local is_focused = (win.win_id ~= "" and win.win_id == focused_win_id)
 					ws_groups[w].icons[i]:set({
 						drawing = true,
 						icon = {
@@ -173,17 +175,17 @@ end
 
 -- Single combined shell command (1 process instead of 3 sequential ones)
 local QUERY_CMD = "echo '---WINDOWS---'; "
-	.. "aerospace list-windows --all --format '%{workspace}|||%{app-name}' 2>/dev/null; "
+	.. "aerospace list-windows --all --format '%{workspace}|||%{app-name}|||%{window-id}' 2>/dev/null; "
 	.. "echo '---FOCUSED_WS---'; "
 	.. "aerospace list-workspaces --focused 2>/dev/null; "
-	.. "echo '---FOCUSED_APP---'; "
-	.. "aerospace list-windows --focused --format '%{app-name}' 2>/dev/null"
+	.. "echo '---FOCUSED_WIN---'; "
+	.. "aerospace list-windows --focused --format '%{window-id}' 2>/dev/null"
 
 -- Parse the combined output into its 3 sections
 local function parse_combined(raw)
 	local windows_block = ""
 	local focused_ws = ""
-	local focused_app = ""
+	local focused_win_id = ""
 
 	local section = nil
 	for line in raw:gmatch("[^\r\n]+") do
@@ -191,18 +193,18 @@ local function parse_combined(raw)
 			section = "w"
 		elseif line == "---FOCUSED_WS---" then
 			section = "fw"
-		elseif line == "---FOCUSED_APP---" then
-			section = "fa"
+		elseif line == "---FOCUSED_WIN---" then
+			section = "fwin"
 		elseif section == "w" then
 			windows_block = windows_block .. line .. "\n"
 		elseif section == "fw" then
 			focused_ws = line:match("^%s*(.-)%s*$") or ""
-		elseif section == "fa" then
-			focused_app = line:match("^%s*(.-)%s*$") or ""
+		elseif section == "fwin" then
+			focused_win_id = line:match("^%s*(.-)%s*$") or ""
 		end
 	end
 
-	return windows_block, focused_ws, focused_app
+	return windows_block, focused_ws, focused_win_id
 end
 
 -- Synchronous update (used at startup)
@@ -213,10 +215,10 @@ local function update_display_sync()
 		p:close()
 	end
 
-	local windows_block, focused_ws, focused_app = parse_combined(raw)
+	local windows_block, focused_ws, focused_win_id = parse_combined(raw)
 	local workspaces, ws_order = parse_all_windows(windows_block)
 	ensure_focused(workspaces, ws_order, focused_ws)
-	render(workspaces, ws_order, focused_ws, focused_app)
+	render(workspaces, ws_order, focused_ws, focused_win_id)
 end
 
 -- Async update (used in event callbacks — single exec, no nesting)
@@ -227,10 +229,10 @@ local function update_display_async()
 
 	sbar.exec(QUERY_CMD, function(raw)
 		local output = tostring(raw or "")
-		local windows_block, focused_ws, focused_app = parse_combined(output)
+		local windows_block, focused_ws, focused_win_id = parse_combined(output)
 		local workspaces, ws_order = parse_all_windows(windows_block)
 		ensure_focused(workspaces, ws_order, focused_ws)
-		render(workspaces, ws_order, focused_ws, focused_app)
+		render(workspaces, ws_order, focused_ws, focused_win_id)
 	end)
 end
 
@@ -241,6 +243,10 @@ ws_groups[1].pill:subscribe("aerospace_workspace_change", function(_)
 end)
 
 ws_groups[1].pill:subscribe("front_app_switched", function(_)
+	update_display_async()
+end)
+
+ws_groups[1].pill:subscribe("aerospace_focus_change", function(_)
 	update_display_async()
 end)
 
