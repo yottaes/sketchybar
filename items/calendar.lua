@@ -21,7 +21,7 @@ local cal = sbar.add("item", "widgets.calendar", {
   },
   padding_left = 0,
   padding_right = 0,
-  update_freq = 30,
+  update_freq = 1,
 })
 
 local function update_calendar()
