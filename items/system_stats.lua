@@ -76,41 +76,51 @@ do
 end
 
 local max_bar_height = 28
+
+-- Detect P/E core split (Apple Silicon; falls back to all-P on Intel)
+local pcores = ncores
+do
+	local p = io.popen("sysctl -n hw.perflevel0.logicalcpu 2>/dev/null")
+	if p then
+		local n = tonumber(p:read("*a"):match("(%d+)"))
+		p:close()
+		if n and n > 0 and n < ncores then pcores = n end
+	end
+end
 local bar_width = 6
+local bar_gap = 2
 
 local function color_for_load(load)
-	if load >= 75 then
-		return colors.red
-	end
-	if load >= 50 then
-		return colors.peach
-	end
-	if load >= 25 then
-		return colors.yellow
-	end
+	if load >= 75 then return colors.red end
+	if load >= 50 then return colors.peach end
+	if load >= 25 then return colors.yellow end
 	return colors.green
 end
 
--- Create core items right-to-left (rightmost core first)
+-- Spacer between GPU graph and core bars (keeps trailing_gap off the bars)
+sbar.add("item", "widgets.sys.cpu.spacer", {
+	position = "right",
+	width = trailing_gap,
+	padding_left = 0,
+	padding_right = 0,
+})
+
+-- Single loop, right-to-left. Kernel order: P(0..pcores-1), E(pcores..ncores-1)
 local core_items = {}
 for i = ncores - 1, 0, -1 do
-	local pr = 1
-	if i == ncores - 1 then
-		pr = trailing_gap
-	end -- gap between cores and GPU
 	core_items[i] = sbar.add("item", "widgets.sys.cpu.core_" .. i, {
 		position = "right",
 		width = bar_width,
 		icon = { drawing = false },
 		label = { drawing = false },
 		background = {
-			color = colors.green,
+			color = (i >= pcores) and colors.blue or colors.green,
 			height = 3,
 			corner_radius = 2,
 			y_offset = -(max_bar_height - 3) / 2,
 		},
 		padding_left = 0,
-		padding_right = pr,
+		padding_right = bar_gap,
 	})
 end
 
@@ -169,13 +179,11 @@ cpu_label:subscribe("mouse.clicked", function(env)
 end)
 
 local function update_core(idx, load)
-	if not core_items[idx] then
-		return
-	end
+	if not core_items[idx] then return end
 	local h = math.max(3, math.floor(load / 100 * max_bar_height + 0.5))
 	core_items[idx]:set({
 		background = {
-			color = color_for_load(load),
+			color = (idx >= pcores) and colors.blue or color_for_load(load),
 			height = h,
 			y_offset = -(max_bar_height - h) / 2,
 		},
